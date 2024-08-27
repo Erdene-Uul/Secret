@@ -1,0 +1,36 @@
+{
+  "PartList": [
+    {
+      "key": "xx",
+      "value": "exchange"
+    },
+    {
+      "key": "pp",
+      "value": "Painting (sheet metal)"
+    },
+    {
+      "key": "F",
+      "value": "Breakdown"
+    },
+    {
+      "key": "w",
+      "value": "Sheet metal/welding"
+    },
+    {
+      "key": "M",
+      "value": "Adjustment work"
+    },
+    {
+      "key": "X",
+      "value": "Replacement request"
+    },
+    {
+      "key": "A",
+      "value": "wound"
+    },
+    {
+      "key": "C",
+      "value": "corrosion"
+    }
+  ]
+}

@@ -53,9 +53,31 @@ def navigate_to_web_view():
     time.sleep(6)
     pyautogui.moveTo(1100, 900, duration=0.2)
     pyautogui.click()
+    time.sleep(5)
+    pyautogui.moveTo(1100, 900, duration=0.2)
+    pyautogui.click()
     time.sleep(4)
     pyautogui.moveTo(590, 85, duration=0.2)
     pyautogui.click()
+
+def close_application(app, chrome_window):
+    """Minimize Chrome and close the application."""
+    try:
+        # Minimize the Chrome window
+        time.sleep(2)
+        chrome_window.minimize()
+        time.sleep(1)  # Wait for Chrome to minimize
+        
+        # Send Alt+F4 to close the active application window
+        pyautogui.hotkey('alt', 'f4')
+        time.sleep(2)  # Wait for the popup to appear
+        
+        # Click the "확인" (Confirm) button on the confirmation popup
+        pyautogui.moveTo(920, 585, duration=0.2)  # Adjust these coordinates as necessary
+        pyautogui.click()
+
+    except Exception as e:
+        print(f"Failed to close the application: {e}")
 
 def main():
     """Main function to execute the workflow."""
@@ -78,6 +100,9 @@ def main():
             print("Failed to extract URL.")
     else:
         print("Chrome window did not appear within the timeout.")
+
+    # Close the application after saving the URL
+    close_application(app, chrome_window)
 
 if __name__ == '__main__':
     main()
