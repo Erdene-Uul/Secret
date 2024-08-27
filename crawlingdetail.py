@@ -4,11 +4,11 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
-import pandas as pd
 import json
 import time
 from googletrans import Translator
 
+# Database connection
 connection = psycopg2.connect(
         dbname="auction",
         user="postgres",
@@ -17,6 +17,7 @@ connection = psycopg2.connect(
         port="5432"
     )
 cur = connection.cursor()
+
 # Initialize the translator
 translator = Translator()
 
@@ -24,6 +25,7 @@ translator = Translator()
 with open('url.txt', 'r') as file:
     url = file.read().strip()
 
+# Set up WebDriver options
 options = webdriver.ChromeOptions()
 options.add_argument('--headless')
 options.add_argument('--no-sandbox')
@@ -33,7 +35,6 @@ options.add_argument('--disable-dev-shm-usage')
 driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
 driver.get(url)
 
-car_data = []
 car_detail_data = []
 detail_base_url = "https://auction.autobell.co.kr/auction/exhibitView.do"
 
@@ -47,7 +48,7 @@ except Exception as e:
     raise e
 
 # Loop through each page
-for page in range(1, 2):
+for page in range(1, 2):  # Adjust this range as needed
     soup = BeautifulSoup(driver.page_source, 'html.parser')
     list_section = soup.find_all('div', class_="item")
 
@@ -75,7 +76,7 @@ for page in range(1, 2):
                 
                 if chassis_number_span:
                     chassis_number = chassis_number_span.text.strip()
-                    cur.execute("SELECT id FROM Cars WHERE car_id = %s", (chassis_number,))
+                    cur.execute("SELECT carid FROM Cars WHERE CarId = %s", (chassis_number,))
                     car_exists = cur.fetchone()
                     if car_exists:
                         continue
@@ -83,92 +84,89 @@ for page in range(1, 2):
                     
                 else:
                     print("Chassis Number (차대번호) not found.")
+                    continue
+
                 # Extract data from the detail page
                 detail_data = {}
-                number = 0
-                # Extract all images from the "view-wrap" container
                 image_urls = []
+                
+                # Extract all images from the "view-wrap" container
                 view_wrap = detail_soup.find('div', class_='view-wrap')
                 if view_wrap:
                     img_tags = view_wrap.find_all('img')
+                    
+                    seen_urls = set()
+                    unique_img_tags = []
+                    
                     for img_tag in img_tags:
-                        if 'src' in img_tag.attrs:
-                            image_urls.append(img_tag['src'])
-
-                bid_detail = detail_soup.find('div', class_='bid-detail')
-                if bid_detail:
-                    car_info = bid_detail.find('div', class_='car-info')
-                    if car_info:
-                        ul = car_info.find('ul')
-                        if ul:
-                            li_items = ul.find_all('li')
-                            if len(li_items) > 1:
-                                product_number = li_items[1].text.strip()  # This should be '품목번호 1001'
-                                number = product_number.split()[-1]  # This extracts '1001'
-                                print("Extracted Number:", number)     
+                        img_url = img_tag.get('src')
+                        if img_url not in seen_urls:
+                            seen_urls.add(img_url)
+                            unique_img_tags.append(img_tag)
                 data = {}
                 table_section = detail_soup.find('div', class_='info-box')
-
                 if table_section:
-                    # Find all <dl> elements
                     dl_elements = table_section.find_all('dl')
-                    
                     for dl in dl_elements:
-                        dt_elements = dl.find_all('dt')  # Find all <dt> tags
-                        dd_elements = dl.find_all('dd')  # Find all <dd> tags
+                        dt_elements = dl.find_all('dt')
+                        dd_elements = dl.find_all('dd')
                         
                         for dt, dd in zip(dt_elements, dd_elements):
-                            
                             label = dt.text.strip()
-                            if dd.find('span'):
-                                value = dd.find('span').text.strip()
-                            else:
-                                value = dd.text.strip()
-                            print(value, '-----------hi')
-                            # Translate the label and value from Korean to English
+                            value = dd.text.strip()
                             translated_label = translator.translate(label, src='ko', dest='en').text
                             translated_value = translator.translate(value, src='ko', dest='en').text
                             data[translated_label] = translated_value
 
-                else:
-                    print("Table section not found")
                 status_box = detail_soup.find('div', class_='status-box')
-             
-                image_url = None
+                main_image_url = None
+         
                 if status_box:
                     img_tag = status_box.find('div', class_='img-box').find('img')
-                    image_url = img_tag['src'] if img_tag else None
-                    
-                else:
-                    print("Status box not found")
+                    main_image_url = img_tag['src'] if img_tag else None
 
-                # Example additional information extraction
-                car_detail_data.append({
-                    'Images': image_urls, # Include all images
-                    'CarId': chassis_number,
-                    'Image': image_url,
-                    'Info':data 
-                })
+                # Insert data into Cars table
                 cur.execute("""
-                        INSERT INTO Cars (car_id, main_image_url) 
-                        VALUES (%s, %s) 
-                        RETURNING id;
-                    """, (chassis_number, image_url))
+                    INSERT INTO Cars (
+                        CarId, ImageUrl, ProductClassification, Fuel, Displacement, Salvation, 
+                        UseDistinction, Primitives, Storage, Periodic, CompleteDocuments, 
+                        CarNumber, YearType, InitialRegistrationDate, Mileage, Color, Transmission, SeatNumber, Insufficiency
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    );
+                """, (
+                    chassis_number,
+                    main_image_url,
+                    data.get('Product classification'),
+                    data.get('fuel'),
+                    data.get('Displacement'),
+                    data.get('Salvation'),
+                    data.get('Use/distinction'),
+                    data.get('Primitives'),
+                    data.get('Storage'),
+                    data.get('Periodic'),
+                    data.get('Complete documents'),
+                    data.get('Car number'),
+                    int(data.get('Year').split()[0]) if 'Year' in data else None,
+                    data.get('Initial registration date'),
+                    int(data.get('Mileage', '0').replace(',', '').replace('km', '')) if 'Mileage' in data else None,
+                    data.get('color'),
+                    data.get('Transmission'),
+                    data.get('Seat number'),
+                    data.get('Insufficiency')
+                ))
 
-                # Get the inserted car's ID
-                car_db_id = cur.fetchone()[0]
-                # Insert data into the CarInfo table
-                car_info_values = [(car_db_id, label, value) for label, value in data.items()]
+                # Insert data into CarImages table
+                car_images_values = [(chassis_number, img_url) for img_url in unique_img_tags]
+                print(len(car_images_values),'-------len2')
                 execute_values(cur, """
-                    INSERT INTO CarInfo (car_id, label, value) 
-                    VALUES %s;
-                """, car_info_values)
-                    # Insert data into the CarImages table
-                car_images_values = [(car_db_id, img_url) for img_url in image_urls]
-                execute_values(cur, """
-                    INSERT INTO CarImages (car_id, image_url) 
+                    INSERT INTO CarImages (CarId, ImageUrl) 
                     VALUES %s;
                 """, car_images_values)
+                
+                # Commit after each car data insertion
+                connection.commit()
+
                 # Go back to the main list page
                 driver.back()
                 time.sleep(3)
@@ -183,9 +181,10 @@ for page in range(1, 2):
 
 driver.quit()
 connection.commit()
-# Close the connection
 cur.close()
 connection.close()
+
+# Save the extracted data to a JSON file
 with open('car_detail_data.json', 'w', encoding='utf-8') as detail_json_file:
     json.dump(car_detail_data, detail_json_file, ensure_ascii=False, indent=4)
 
