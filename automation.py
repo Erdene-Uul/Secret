@@ -53,13 +53,16 @@ def navigate_to_web_view():
     time.sleep(6)
     pyautogui.moveTo(1100, 900, duration=0.2)
     pyautogui.click()
+    time.sleep(5)
+    pyautogui.moveTo(1100, 850, duration=0.2)
+    pyautogui.click()
     time.sleep(4)
     pyautogui.moveTo(590, 85, duration=0.2)
     pyautogui.click()
 
 def main():
     """Main function to execute the workflow."""
-    app = start_application()
+    start_application()
     time.sleep(5)  # Wait for the application to start
 
     login_to_application()

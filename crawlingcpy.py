@@ -21,17 +21,8 @@ driver.get(url)
 
 car_data = []
 
-# Get the total number of pages from the "Last" button
-try:
-    last_page_button = driver.find_element("xpath", '//button[contains(@class, "paging-last")]')
-    total_pages = int(last_page_button.get_attribute('onclick').split('fnPaging(')[1].split(')')[0])
-except Exception as e:
-    print("Could not determine the total number of pages. Exiting...")
-    driver.quit()
-    raise e
-
 # Loop through each page
-for page in range(1, total_pages + 1):
+while True:
     soup = BeautifulSoup(driver.page_source, 'html.parser')
     list_section = soup.find_all('div', class_="item")
 
@@ -68,11 +59,16 @@ for page in range(1, total_pages + 1):
 
             car_data.append({'Name': car_name, 'Price': car_price, 'Image': car_image, "Options:": options})
 
-    # If it's not the last page, click the "Next" button
-    if page < total_pages:
-        next_page_button = driver.find_element("xpath", f'//button[@onclick="fnPaging({page + 1})"]')
-        next_page_button.click()
-        time.sleep(3)  # Wait for the next page to load
+    # Check if a "Next" button is present
+    try:
+        next_button = driver.find_element("xpath", '//button[contains(@class, "paging-next")]')
+        if "disabled" in next_button.get_attribute("class"):
+            break  # Exit loop if the "Next" button is disabled (no more pages)
+        else:
+            next_button.click()  # Click on the "Next" button
+            time.sleep(3)  # Wait for the next page to load
+    except:
+        break  # Exit loop if the "Next" button is not found (no more pages)
 
 driver.quit()
 
@@ -83,4 +79,4 @@ json_data = df.to_dict(orient='records')
 with open('car_data.json', 'w', encoding='utf-8') as json_file:
     json.dump(json_data, json_file, ensure_ascii=False, indent=4)
 
-print("Data saved to car_data.json")
+print("Data saved to car_data.json") 
