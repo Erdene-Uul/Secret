@@ -1,3 +1,4 @@
+import logging
 import psycopg2
 from psycopg2.extras import execute_values
 from selenium import webdriver
@@ -7,6 +8,7 @@ from bs4 import BeautifulSoup
 import json
 import time
 from googletrans import Translator
+from datetime import datetime
 
 # Database connection
 connection = psycopg2.connect(
@@ -17,14 +19,22 @@ connection = psycopg2.connect(
         port="5432"
     )
 cur = connection.cursor()
-
-# Initialize the translator
-translator = Translator()
-
 # Load the URL from the text file
 with open('url.txt', 'r') as file:
     url = file.read().strip()
 
+# Initialize logging
+logging.basicConfig(level=logging.INFO)
+def translate_text(text, src='ko', dest='en'):
+    try:
+        # Initialize the translator
+        translator = Translator()
+        translated = translator.translate(text, src=src, dest=dest).text
+        return translated
+    except Exception as e:
+        logging.warning(f"Translation failed for text: {text}. Error: {e}")
+        return text  # Return the original text if translation fails
+    
 # Set up WebDriver options
 options = webdriver.ChromeOptions()
 options.add_argument('--headless')
@@ -38,6 +48,7 @@ driver.get(url)
 car_detail_data = []
 detail_base_url = "https://auction.autobell.co.kr/auction/exhibitView.do"
 
+date_format = '%Y년 %m월 %d일'
 # Get the total number of pages from the "Last" button
 try:
     last_page_button = driver.find_element("xpath", '//button[contains(@class, "paging-last")]')
@@ -102,21 +113,39 @@ for page in range(1, 2):  # Adjust this range as needed
                         img_url = img_tag.get('src')
                         if img_url not in seen_urls:
                             seen_urls.add(img_url)
-                            unique_img_tags.append(img_tag)
+                            unique_img_tags.append(img_url)
                 data = {}
+                index = 0
+                data_labels = [ 'Product classification',
+                                'fuel',
+                                'Displacement',
+                                'Salvation',
+                                'Use/distinction',
+                                'Primitives',
+                                'Storage',
+                                'Periodic',
+                                'Complete documents',
+                                'Car number',
+                                'Car id',
+                                'Year',
+                                'Initial registration date',
+                                'Mileage',
+                                'color',
+                                'Transmission',
+                                'Seat number',
+                                'Insufficiency']
                 table_section = detail_soup.find('div', class_='info-box')
                 if table_section:
                     dl_elements = table_section.find_all('dl')
                     for dl in dl_elements:
-                        dt_elements = dl.find_all('dt')
                         dd_elements = dl.find_all('dd')
-                        
-                        for dt, dd in zip(dt_elements, dd_elements):
-                            label = dt.text.strip()
+                        for dd in dd_elements:
+                            print(index, '--index')
                             value = dd.text.strip()
-                            translated_label = translator.translate(label, src='ko', dest='en').text
-                            translated_value = translator.translate(value, src='ko', dest='en').text
-                            data[translated_label] = translated_value
+                            translated_value = translate_text(value, src='ko', dest='en')
+                            print(data_labels[index], '----sd')
+                            data[data_labels[index]] = translated_value
+                            index += 1
 
                 status_box = detail_soup.find('div', class_='status-box')
                 main_image_url = None
@@ -124,7 +153,7 @@ for page in range(1, 2):  # Adjust this range as needed
                 if status_box:
                     img_tag = status_box.find('div', class_='img-box').find('img')
                     main_image_url = img_tag['src'] if img_tag else None
-
+                print(datetime.strptime(data.get('Initial registration date'), date_format),'--op')
                 # Insert data into Cars table
                 cur.execute("""
                     INSERT INTO Cars (
@@ -144,11 +173,11 @@ for page in range(1, 2):  # Adjust this range as needed
                     data.get('Use/distinction'),
                     data.get('Primitives'),
                     data.get('Storage'),
-                    data.get('Periodic'),
+                    datetime.strptime(data.get('Periodic'), date_format),
                     data.get('Complete documents'),
                     data.get('Car number'),
-                    int(data.get('Year').split()[0]) if 'Year' in data else None,
-                    data.get('Initial registration date'),
+                    int(data.get('Year')[:4]) if 'Year' in data else None,
+                    datetime.strptime(data.get('Initial registration date'), date_format),
                     int(data.get('Mileage', '0').replace(',', '').replace('km', '')) if 'Mileage' in data else None,
                     data.get('color'),
                     data.get('Transmission'),
