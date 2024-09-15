@@ -48,7 +48,7 @@ driver.get(url)
 car_detail_data = []
 detail_base_url = "https://auction.autobell.co.kr/auction/exhibitView.do"
 
-date_format = '%Y년 %m월 %d일'
+date_format = '%B %d, %Y'
 # Get the total number of pages from the "Last" button
 try:
     last_page_button = driver.find_element("xpath", '//button[contains(@class, "paging-last")]')
@@ -143,7 +143,7 @@ for page in range(1, 2):  # Adjust this range as needed
                             print(index, '--index')
                             value = dd.text.strip()
                             translated_value = translate_text(value, src='ko', dest='en')
-                            print(data_labels[index], '----sd')
+                            print(translated_value, '----sd')
                             data[data_labels[index]] = translated_value
                             index += 1
 
@@ -176,7 +176,7 @@ for page in range(1, 2):  # Adjust this range as needed
                     datetime.strptime(data.get('Periodic'), date_format),
                     data.get('Complete documents'),
                     data.get('Car number'),
-                    int(data.get('Year')[:4]) if 'Year' in data else None,
+                    int(data.get('Year')[-4:]) if 'Year' in data else None,
                     datetime.strptime(data.get('Initial registration date'), date_format),
                     int(data.get('Mileage', '0').replace(',', '').replace('km', '')) if 'Mileage' in data else None,
                     data.get('color'),
