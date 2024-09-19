@@ -115,83 +115,116 @@ for page in range(1, 2):  # Adjust this range as needed
                             seen_urls.add(img_url)
                             unique_img_tags.append(img_url)
                 data = {}
+                car_name = None
+                car_name_tag = detail_soup.find('div', class_='head-box').find('h2', class_='car-name')
+                if car_name_tag:
+                    car_name = car_name_tag.text.strip()
+                    print(f"Car Name: {car_name}")
+
+                # Extract the car price
+                car_price = None
+                price_tag = detail_soup.find('div', class_='price-box').find('strong', class_='point')
+                if price_tag:
+                    car_price = price_tag.text.strip()
+                    print(f"Car Price: {car_price} 만원")
+
+                # Now add car name and price to the data dictionary
+                data['Car Name'] = car_name
+                data['Car Price'] = car_price
                 index = 0
-                data_labels = [ 'Product classification',
-                                'fuel',
-                                'Displacement',
-                                'Salvation',
-                                'Use/distinction',
-                                'Primitives',
-                                'Storage',
-                                'Periodic',
-                                'Complete documents',
-                                'Car number',
-                                'Car id',
-                                'Year',
-                                'Initial registration date',
-                                'Mileage',
-                                'color',
-                                'Transmission',
-                                'Seat number',
-                                'Insufficiency']
+                data_labels = [ 
+                    'Product type',
+                    'Fuel Type',
+                    'Engine Displacement',
+                    'Seating Capacity',
+                    'Purpose',
+                    'Engine Model',
+                    'Warranty',
+                    'Last Regular Inspection',
+                    'License Plate Number',
+                    'Model Year',
+                    'First Registration Date',
+                    'Mileage',
+                    'Color',
+                    'Transmission',
+                    'Seat Number'
+                ]
+
                 table_section = detail_soup.find('div', class_='info-box')
                 if table_section:
                     dl_elements = table_section.find_all('dl')
                     for dl in dl_elements:
+                        dt_elements = dl.find_all('dt')
                         dd_elements = dl.find_all('dd')
-                        for dd in dd_elements:
-                            print(index, '--index')
+
+                        for dt, dd in zip(dt_elements, dd_elements):
+                            dt_text = dt.text.strip()
+                            
+                            # Skip the element with dt as '완비서류'
+                            if dt_text == '완비서류':
+                                continue
+                            
+                            if dt_text == '차대번호':
+                                continue
+                            
+                            if dt_text == '미비서류':
+                                continue
+
+                            # Process the corresponding dd value
                             value = dd.text.strip()
                             translated_value = translate_text(value, src='ko', dest='en')
-                            print(translated_value, '----sd')
-                            data[data_labels[index]] = translated_value
-                            index += 1
+                            
+                            # Store in the data dictionary with the appropriate label
+                            if index < len(data_labels):
+                                data[data_labels[index]] = translated_value
+                                index += 1
 
+                
                 status_box = detail_soup.find('div', class_='status-box')
                 main_image_url = None
          
                 if status_box:
                     img_tag = status_box.find('div', class_='img-box').find('img')
                     main_image_url = img_tag['src'] if img_tag else None
-                print(datetime.strptime(data.get('Initial registration date'), date_format),'--op')
                 # Insert data into Cars table
-                cur.execute("""
-                    INSERT INTO Cars (
-                        CarId, ImageUrl, ProductClassification, Fuel, Displacement, Salvation, 
-                        UseDistinction, Primitives, Storage, Periodic, CompleteDocuments, 
-                        CarNumber, YearType, InitialRegistrationDate, Mileage, Color, Transmission, SeatNumber, Insufficiency
-                    ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                    );
-                """, (
-                    chassis_number,
-                    main_image_url,
-                    data.get('Product classification'),
-                    data.get('fuel'),
-                    data.get('Displacement'),
-                    data.get('Salvation'),
-                    data.get('Use/distinction'),
-                    data.get('Primitives'),
-                    data.get('Storage'),
-                    datetime.strptime(data.get('Periodic'), date_format),
-                    data.get('Complete documents'),
-                    data.get('Car number'),
-                    int(data.get('Year')[-4:]) if 'Year' in data else None,
-                    datetime.strptime(data.get('Initial registration date'), date_format),
-                    int(data.get('Mileage', '0').replace(',', '').replace('km', '')) if 'Mileage' in data else None,
-                    data.get('color'),
-                    data.get('Transmission'),
-                    data.get('Seat number'),
-                    data.get('Insufficiency')
-                ))
+                # cur.execute("""
+                #     INSERT INTO Cars (
+                #         CarId, ImageUrl, ProductClassification, Fuel, Displacement, Salvation, 
+                #         UseDistinction, Primitives, Storage, Periodic, CompleteDocuments, 
+                #         CarNumber, YearType, InitialRegistrationDate, Mileage, Color, Transmission, SeatNumber, Insufficiency
+                #     ) VALUES (
+                #         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                #     );
+                # """, (
+                #     chassis_number,
+                #     main_image_url,
+                #     data.get('Product classification'),
+                #     data.get('fuel'),
+                #     data.get('Displacement'),
+                #     data.get('Salvation'),
+                #     data.get('Use/distinction'),
+                #     data.get('Primitives'),
+                #     data.get('Storage'),
+                #     datetime.strptime(data.get('Periodic'), date_format),
+                #     data.get('Complete documents'),
+                #     data.get('Car number'),
+                #     int(data.get('Year')[-4:]) if 'Year' in data else None,
+                #     datetime.strptime(data.get('Initial registration date'), date_format),
+                #     int(data.get('Mileage', '0').replace(',', '').replace('km', '')) if 'Mileage' in data else None,
+                #     data.get('color'),
+                #     data.get('Transmission'),
+                #     data.get('Seat number'),
+                #     data.get('Insufficiency')
+                # ))
 
                 # Insert data into CarImages table
                 car_images_values = [(chassis_number, img_url) for img_url in unique_img_tags]
+                car_detail_data.append({'car':data, 'images': car_images_values})
                 print(len(car_images_values),'-------len2')
-                execute_values(cur, """
-                    INSERT INTO CarImages (CarId, ImageUrl) 
-                    VALUES %s;
-                """, car_images_values)
+                # execute_values(cur, """
+                #     INSERT INTO CarImages (CarId, ImageUrl) 
+                #     VALUES %s;
+                # """, car_images_values)
                 
                 # Commit after each car data insertion
                 connection.commit()
