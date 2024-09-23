@@ -9,12 +9,27 @@ import json
 import time
 from googletrans import Translator
 from datetime import datetime
+import re
+
+def json_serial(obj):
+    """JSON serializer for objects not serializable by default json code."""
+    if isinstance(obj, datetime):
+        return obj.strftime('%Y-%m-%d')  # Convert datetime to string in the format 'YYYY-MM-DD'
+    raise TypeError("Type not serializable")
+
+def extract_manufacturer_and_clean_name(car_name):
+    manufacturer = None
+    match = re.search(r'\[(.*?)\]', car_name)
+    if match:
+        manufacturer = match.group(1)
+        car_name = re.sub(r'\[.*?\]', '', car_name).strip() 
+    return manufacturer, car_name
 
 # Database connection
 connection = psycopg2.connect(
-        dbname="auction",
-        user="postgres",
-        password="qwerty",  # Replace with your password
+        dbname="auctiondb",
+        user="dbuser",
+        password="admin123",  # Replace with your password
         host="localhost",
         port="5432"
     )
@@ -26,6 +41,8 @@ with open('url.txt', 'r') as file:
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
 def translate_text(text, src='ko', dest='en'):
+    if isinstance(text, datetime) or text == None:
+        return text  # Convert datetime to string format 'YYYY-MM-DD'
     try:
         # Initialize the translator
         translator = Translator()
@@ -34,6 +51,7 @@ def translate_text(text, src='ko', dest='en'):
     except Exception as e:
         logging.warning(f"Translation failed for text: {text}. Error: {e}")
         return text  # Return the original text if translation fails
+
     
 # Set up WebDriver options
 options = webdriver.ChromeOptions()
@@ -48,7 +66,7 @@ driver.get(url)
 car_detail_data = []
 detail_base_url = "https://auction.autobell.co.kr/auction/exhibitView.do"
 
-date_format = '%B %d, %Y'
+korean_date_format = "%Y년 %m월 %d일"
 # Get the total number of pages from the "Last" button
 try:
     last_page_button = driver.find_element("xpath", '//button[contains(@class, "paging-last")]')
@@ -87,7 +105,8 @@ for page in range(1, 2):  # Adjust this range as needed
                 
                 if chassis_number_span:
                     chassis_number = chassis_number_span.text.strip()
-                    cur.execute("SELECT carid FROM Cars WHERE CarId = %s", (chassis_number,))
+                    cur.execute("SELECT vin_number FROM cars WHERE vin_number = %s", (chassis_number,))
+                    print(chassis_number,'----chasis')
                     car_exists = cur.fetchone()
                     if car_exists:
                         continue
@@ -116,20 +135,23 @@ for page in range(1, 2):  # Adjust this range as needed
                             unique_img_tags.append(img_url)
                 data = {}
                 car_name = None
+                manufacturer = None
                 car_name_tag = detail_soup.find('div', class_='head-box').find('h2', class_='car-name')
                 if car_name_tag:
-                    car_name = car_name_tag.text.strip()
-                    print(f"Car Name: {car_name}")
+                     car_name = translate_text(car_name_tag.text.strip(), src='ko', dest='en')
+                     print(f"Original Car Name: {car_name}")
+                     manufacturer, cleaned_car_name = extract_manufacturer_and_clean_name(car_name)
 
                 # Extract the car price
                 car_price = None
                 price_tag = detail_soup.find('div', class_='price-box').find('strong', class_='point')
                 if price_tag:
-                    car_price = price_tag.text.strip()
+                    car_price = translate_text(price_tag.text.strip().replace(',',''), src='ko', dest='en')
                     print(f"Car Price: {car_price} 만원")
 
                 # Now add car name and price to the data dictionary
-                data['Car Name'] = car_name
+                data['Car Name'] = cleaned_car_name
+                data['Manufacturer'] = manufacturer
                 data['Car Price'] = car_price
                 index = 0
                 data_labels = [ 
@@ -159,20 +181,47 @@ for page in range(1, 2):  # Adjust this range as needed
 
                         for dt, dd in zip(dt_elements, dd_elements):
                             dt_text = dt.text.strip()
-                            
-                            # Skip the element with dt as '완비서류'
-                            if dt_text == '완비서류':
+                            if dt_text == '완비서류' or dt_text == '차대번호' or dt_text == '미비서류':
                                 continue
-                            
-                            if dt_text == '차대번호':
-                                continue
-                            
-                            if dt_text == '미비서류':
-                                continue
-
-                            # Process the corresponding dd value
-                            value = dd.text.strip()
+                            if dt_text =='차량번호':
+                                license_plate_span = dd.find('span', id='h_carno')
+                                if license_plate_span:
+                                    value = license_plate_span.text.strip()
+                                else:
+                                    value = dd.text.strip()  
+                            elif dt_text == '인승':  
+                                seating_capacity_text = dd.text.strip()
+                                seating_capacity = ''.join(filter(str.isdigit, seating_capacity_text))
+                                value = seating_capacity
+                            elif dt_text == '연식':  # 'Model Year'
+                                model_year_text = dd.text.strip()
+                                model_year = ''.join(filter(str.isdigit, model_year_text))
+                                value = model_year
+                            elif dt_text == '주행거리':  # 'Mileage'
+                                mileage_text = dd.text.strip()
+                                # Remove commas and non-numeric characters (like 'km') from mileage
+                                mileage = ''.join(filter(str.isdigit, mileage_text))
+                                value = mileage
+                            elif dt_text == '배기량':  # 'Engine Displacement'
+                                engine_displacement_text = dd.text.strip()
+                                engine_displacement = ''.join(filter(str.isdigit, engine_displacement_text))
+                                value = engine_displacement
+                            elif dt_text == '정기검사일': 
+                                last_date = dd.text.strip()
+                                if last_date == '미조회':
+                                    value = None
+                                else:
+                                    value = datetime.strptime(last_date, korean_date_format)
+                            elif dt_text == '최초등록일': 
+                                first_date = dd.text.strip()
+                                if first_date == '미조회':
+                                    value = None
+                                else:
+                                    value = datetime.strptime(first_date, korean_date_format)
+                            else:
+                                value = dd.text.strip()
                             translated_value = translate_text(value, src='ko', dest='en')
+                          
                             
                             # Store in the data dictionary with the appropriate label
                             if index < len(data_labels):
@@ -187,47 +236,68 @@ for page in range(1, 2):  # Adjust this range as needed
                     img_tag = status_box.find('div', class_='img-box').find('img')
                     main_image_url = img_tag['src'] if img_tag else None
                 # Insert data into Cars table
-                # cur.execute("""
-                #     INSERT INTO Cars (
-                #         CarId, ImageUrl, ProductClassification, Fuel, Displacement, Salvation, 
-                #         UseDistinction, Primitives, Storage, Periodic, CompleteDocuments, 
-                #         CarNumber, YearType, InitialRegistrationDate, Mileage, Color, Transmission, SeatNumber, Insufficiency
-                #     ) VALUES (
-                #         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                #     );
-                # """, (
-                #     chassis_number,
-                #     main_image_url,
-                #     data.get('Product classification'),
-                #     data.get('fuel'),
-                #     data.get('Displacement'),
-                #     data.get('Salvation'),
-                #     data.get('Use/distinction'),
-                #     data.get('Primitives'),
-                #     data.get('Storage'),
-                #     datetime.strptime(data.get('Periodic'), date_format),
-                #     data.get('Complete documents'),
-                #     data.get('Car number'),
-                #     int(data.get('Year')[-4:]) if 'Year' in data else None,
-                #     datetime.strptime(data.get('Initial registration date'), date_format),
-                #     int(data.get('Mileage', '0').replace(',', '').replace('km', '')) if 'Mileage' in data else None,
-                #     data.get('color'),
-                #     data.get('Transmission'),
-                #     data.get('Seat number'),
-                #     data.get('Insufficiency')
-                # ))
+                print(data.get('Last Regular Inspection'), '----date')
+                print(data.get('First Registration Date'), '----date2')
+                try:
+                    cur.execute("""
+                    INSERT INTO cars (
+                        vin_number, name, status, product_type, fuel_type, engine_displacement, seating_capacity, 
+                        purpose, engine_model, warranty, starting_price, last_regular_inspection, license_plate_number, model_year, first_registration_date, mileage, color, transmission, seat_number, manufacturer, image_url, created_by, created_date, updated_by, updated_date
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    ) RETURNING id;
+                    """, (
+                    chassis_number,
+                    data['Car Name'],
+                    1,
+                    data.get('Product type'),
+                    data.get('Fuel Type'),
+                    data.get('Engine Displacement'),
+                    data.get('Seating Capacity'),
+                    data.get('Purpose'),
+                    data.get('Engine Model'),
+                    data.get('Warranty'),
+                    data.get('Car Price'),
+                    data.get('Last Regular Inspection'),
+                    data.get('License Plate Number'),
+                    data.get('Model Year'),
+                    data.get('First Registration Date'),
+                    data.get('Mileage'),
+                    data.get('Color'),
+                    data.get('Transmission'),
+                    data.get('Seat Number'),
+                    data.get('Manufacturer'),
+                    main_image_url,
+                    1,
+                    datetime.now(),
+                    1,
+                    datetime.now()
+                ))
+                    
+                     # Insert data into CarImages table
+                    data['Main Image'] = main_image_url
+                    car_id = cur.fetchone()[0]
+                    print(f"Car inserted with ID: {car_id}")
+                    cur.execute("SELECT * FROM cars WHERE id = %s", (car_id,))
+                    car = cur.fetchone()
+                    connection.commit()
+                    if car:
+                        print(f"Car exists in table with ID: {car_id}")
+                    else:
+                        print(f"Car not found in table with ID: {car_id}")
+                  
+                    # Insert data into CarImages table using the auto-incremented car_id
+                    car_images_values = [(car_id, img_url, 1, 1, datetime.now(), 1, datetime.now()) for img_url in unique_img_tags]
+                    car_detail_data.append({'car':data, 'images':car_images_values})
 
-                # Insert data into CarImages table
-                car_images_values = [(chassis_number, img_url) for img_url in unique_img_tags]
-                car_detail_data.append({'car':data, 'images': car_images_values})
-                print(len(car_images_values),'-------len2')
-                # execute_values(cur, """
-                #     INSERT INTO CarImages (CarId, ImageUrl) 
-                #     VALUES %s;
-                # """, car_images_values)
-                
-                # Commit after each car data insertion
-                connection.commit()
+                    # Use execute_values to insert all images related to this car
+                    execute_values(cur, """
+                        INSERT INTO car_images (car_id, name, status, created_by, created_date, updated_by, updated_date) 
+                        VALUES %s;
+                    """, car_images_values)
+                    connection.commit()
+                except Exception as inst:
+                    print(inst, '---eroor')
 
                 # Go back to the main list page
                 driver.back()
@@ -248,6 +318,6 @@ connection.close()
 
 # Save the extracted data to a JSON file
 with open('car_detail_data.json', 'w', encoding='utf-8') as detail_json_file:
-    json.dump(car_detail_data, detail_json_file, ensure_ascii=False, indent=4)
+    json.dump(car_detail_data, detail_json_file, ensure_ascii=False, indent=4, default=json_serial)
 
 print("Data saved to car_detail_data.json")

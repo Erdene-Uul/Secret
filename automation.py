@@ -81,7 +81,7 @@ def close_application(app, chrome_window):
 
 def main():
     """Main function to execute the workflow."""
-    start_application()
+    app = start_application()
     time.sleep(5)  # Wait for the application to start
 
     login_to_application()
