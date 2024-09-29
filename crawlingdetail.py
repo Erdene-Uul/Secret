@@ -10,6 +10,9 @@ import time
 from googletrans import Translator
 from datetime import datetime
 import re
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 def json_serial(obj):
     """JSON serializer for objects not serializable by default json code."""
@@ -77,7 +80,7 @@ except Exception as e:
     raise e
 
 # Loop through each page
-for page in range(1, 2):  # Adjust this range as needed
+for page in range(1, total_pages + 1):  # Adjust this range as needed
     soup = BeautifulSoup(driver.page_source, 'html.parser')
     list_section = soup.find_all('div', class_="item")
 
@@ -298,18 +301,16 @@ for page in range(1, 2):  # Adjust this range as needed
                     connection.commit()
                 except Exception as inst:
                     print(inst, '---eroor')
+                    connection.rollback()
 
                 # Go back to the main list page
                 driver.back()
                 time.sleep(3)
-                if index == 1:
-                    break
-            break
-    break
+    
     if page < total_pages:
         next_page_button = driver.find_element("xpath", f'//button[@onclick="fnPaging({page + 1})"]')
         next_page_button.click()
-        time.sleep(3)
+        time.sleep(5)
 
 driver.quit()
 connection.commit()
