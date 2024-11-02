@@ -71,6 +71,9 @@ detail_base_url = "https://auction.autobell.co.kr/auction/exhibitView.do"
 
 korean_date_format = "%Y년 %m월 %d일"
 # Get the total number of pages from the "Last" button
+
+
+
 try:
     last_page_button = driver.find_element("xpath", '//button[contains(@class, "paging-last")]')
     total_pages = int(last_page_button.get_attribute('onclick').split('fnPaging(')[1].split(')')[0])

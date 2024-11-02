@@ -23,12 +23,11 @@ def run_crawling():
 def main():
     """Main function to set up the schedule."""
     # Schedule automation.py to run at 58 minutes past every hour
-    schedule.every().hour.at(":58").do(run_automation)
-    run_automation
+    schedule.every().hour.at(":31").do(run_automation)
     
     # Schedule crawling.py to run at 2 minutes past every hour
-    schedule.every().hour.at(":02").do(run_crawling)
-    
+    schedule.every().hour.at(":32").do(run_crawling)
+   
     print("Scheduler started. Running automation.py at 58 min of every hour and crawling.py at 2 min of every hour...")
     
     # Keep the script running
