@@ -159,7 +159,8 @@ for option in range(len(auction_options)):
                         
                         for img_tag in img_tags:
                             img_url = img_tag.get('src')
-                            if img_url not in seen_urls:
+                            style = img_tag.get('style')
+                            if img_url and img_url not in seen_urls and (not style or 'display: none' not in style):
                                 seen_urls.add(img_url)
                                 unique_img_tags.append(img_url)
                     data = {}
@@ -346,9 +347,9 @@ for option in range(len(auction_options)):
         # Navigate to the next page
         # Print the current page URL
         driver.get(new_url)
-        time.sleep(5)
+        time.sleep(8)
         print("Current page URL:", driver.current_url)
-
+       
         if page < total_pages:
             next_page_button = driver.find_element("xpath", f'//button[@onclick="fnPaging({page + 1})"]')
             next_page_button.click()
