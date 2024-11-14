@@ -347,7 +347,20 @@ for option in range(len(auction_options)):
         if page < total_pages:
             next_page_button = driver.find_element("xpath", f'//button[@onclick="fnPaging({page + 1})"]')
             next_page_button.click()
+            # next_page_button = None
+            # while True:
+            #     try:
+            #         next_page_button = driver.find_element("xpath", f'//button[@onclick="fnPaging({page + 1})"]')
+            #         print("next_page_button is found")
+            #         break
+            #     except Exception as e:
+            #         print("Next page button not found. Error:", e)
+            #         next_page_button = driver.find_element("class name", "paging-next")
+            #         next_page_button.click()
+            # if next_page_button: 
+            #     next_page_button.click()
             time.sleep(5)
+
               
 
 driver.quit()
