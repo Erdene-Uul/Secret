@@ -23,10 +23,10 @@ def wait_for_chrome_window(timeout=30):
 def get_current_url(chrome_window):
     """Get the current URL from the active Chrome window."""
     chrome_window.activate()
-    time.sleep(2)
+    time.sleep(2.5)
 
     pyautogui.hotkey('ctrl', 'l')  # Focus the URL bar
-    time.sleep(0.7)
+    time.sleep(0.2)
     pyautogui.hotkey('ctrl', 'c')  # Copy the URL
     time.sleep(0.7)
     url = pyperclip.paste()        # Retrieve the copied URL

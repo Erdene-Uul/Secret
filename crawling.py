@@ -30,10 +30,10 @@ def extract_manufacturer_and_clean_name(car_name):
 
 # Database connection
 connection = psycopg2.connect(
-        dbname="auctiondb",
-        user="dbuser",
-        password="admin123",  # Replace with your password
-        host="localhost",
+        dbname="postgres",
+        user="admin",
+        password="socar", 
+        host="18.167.136.248",
         port="5432"
     )
 cur = connection.cursor()
@@ -193,20 +193,20 @@ for option in range(len(auction_options)):
                     data['Car Price'] = car_price
                     index = 0
                     data_labels = [ 
-                        'Product type',
+                        # 'Product type',
                         'Fuel Type',
                         'Engine Displacement',
                         'Seating Capacity',
-                        'Purpose',
+                        # 'Purpose',
                         'Engine Model',
-                        'Warranty',
-                        'Last Regular Inspection',
+                        # 'Warranty',
+                        # 'Last Regular Inspection',
                         'License Plate Number',
                         'Model Year',
-                        'First Registration Date',
+                        # 'First Registration Date',
                         'Mileage',
                         'Color',
-                        'Transmission',
+                        # 'Transmission',
                         'Seat Number'
                     ]
 
@@ -245,18 +245,18 @@ for option in range(len(auction_options)):
                                     engine_displacement = ''.join(filter(str.isdigit, engine_displacement_text))
                                     value = engine_displacement
                                 elif dt_text == '정기검사일': 
-                                    last_date = dd.text.strip()
-                                    if last_date == '미조회':
-                                        value = None
-                                    else:
-                                        value = datetime.strptime(last_date, korean_date_format)
+                                    continue
                                 elif dt_text == '최초등록일': 
-                                    first_date = dd.text.strip()
-                                    if first_date == '미조회':
-                                        value = None
-                                    else:
-                                        value = datetime.strptime(first_date, korean_date_format)
-                                else:
+                                    continue
+                                elif dt_text == '상품구분': 
+                                    continue
+                                elif dt_text == '용도/구분': 
+                                    continue
+                                elif dt_text == '보관품': 
+                                    continue
+                                elif dt_text == '변속기': 
+                                    continue
+                                else:   
                                     value = dd.text.strip()
                                 translated_value = translate_text(value, src='ko', dest='en')
                             
@@ -279,30 +279,24 @@ for option in range(len(auction_options)):
                     try:
                         cur.execute("""
                         INSERT INTO cars (
-                            vin_number, name, status, product_type, fuel_type, engine_displacement, seating_capacity, 
-                            purpose, engine_model, warranty, starting_price, last_regular_inspection, license_plate_number, model_year, first_registration_date, mileage, color, transmission, seat_number, manufacturer, image_url, created_by, created_date, updated_by, updated_date, auction_date
+                            vin_number, name, status, fuel_type, engine_displacement, seating_capacity, 
+                            engine_model, starting_price, license_plate_number, model_year, mileage, color, seat_number, manufacturer, image_url, created_by, created_date, updated_by, updated_date, auction_date
                         ) VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                         ) RETURNING id;
                         """, (
                         chassis_number,
                         data['Car Name'],
                         1,
-                        data.get('Product type'),
                         data.get('Fuel Type'),
                         data.get('Engine Displacement'),
                         data.get('Seating Capacity'),
-                        data.get('Purpose'),
                         data.get('Engine Model'),
-                        data.get('Warranty'),
                         data.get('Car Price'),
-                        data.get('Last Regular Inspection'),
                         data.get('License Plate Number'),
                         data.get('Model Year'),
-                        data.get('First Registration Date'),
                         data.get('Mileage'),
                         data.get('Color'),
-                        data.get('Transmission'),
                         data.get('Seat Number'),
                         data.get('Manufacturer'),
                         main_image_url,
