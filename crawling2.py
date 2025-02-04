@@ -14,6 +14,16 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+# Database connection
+connection = psycopg2.connect(
+        dbname="postgres",
+        user="admin",
+        password="socar", 
+        host="18.167.136.248",
+        port="5432"
+    )
+cur = connection.cursor()
+
 BRAND_NAME_MAP = {
     "현대": "Hyundai",
     "벤츠": "Mercedes",
@@ -78,13 +88,47 @@ try:
         login_button.click()
         print("Login button clicked.")
         time.sleep(2)
-        first_div = WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.XPATH, "//div[@class='link text-center']/a")))
-        print("Located the '전체' section.")
+        try:
+            # Wait for the modal to appear
+            modal = WebDriverWait(driver, 5).until(
+                EC.presence_of_element_located((By.ID, "renewal_tax"))
+            )
+            print("Modal detected. Waiting for '닫기' button...")
 
-        # Scroll into view and click
-        driver.execute_script("arguments[0].scrollIntoView();", first_div)
-        first_div.click()
-        print("Clicked on '전체' section.")
+            # Find the '닫기' button inside the modal
+            close_button = WebDriverWait(driver, 5).until(
+                EC.element_to_be_clickable((By.XPATH, "//a[contains(@class, 'btn') and contains(text(), '닫기')]"))
+            )
+
+            # Use JavaScript to click the button to avoid interception
+            driver.execute_script("arguments[0].click();", close_button)
+            print("Closed the modal using JavaScript.")
+
+            # Wait for the modal to disappear completely
+            WebDriverWait(driver, 5).until(
+                EC.invisibility_of_element_located((By.ID, "renewal_tax"))
+            )
+            print("Modal has disappeared.")
+
+        except Exception as e:
+            print(f"No modal detected or issue in closing it: {e}")
+
+        # Now click on '전체' section
+        try:
+            first_div = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//div[@class='link text-center']/a"))
+            )
+            print("Located the '전체' section.")
+
+            # Scroll into view and click
+            driver.execute_script("arguments[0].scrollIntoView();", first_div)
+            driver.execute_script("arguments[0].click();", first_div)  # Using JS to avoid interception
+            print("Clicked on '전체' section.")
+
+        except Exception as e:
+            print(f"Error clicking '전체': {e}")
+
+
         time.sleep(2)
         span_element = BeautifulSoup(driver.page_source, 'html.parser').find('span', class_="i_comm_main_txt")
         print(span_element, '=========span')
@@ -110,12 +154,20 @@ try:
             print(f"Found {len(cars)} cars on this page.")
             for i in range(len(cars)):
                 try:
+                    car_details = {}
                     cars = WebDriverWait(driver, 10).until(
                         EC.presence_of_all_elements_located((By.CLASS_NAME, "car_one"))
                     )
                     car = cars[i]
+                    try:
+                        eval_score_element = car.find_element(By.XPATH, ".//strong[contains(text(),'평가점')]/parent::div")
+                        eval_score = eval_score_element.text.strip()
+                        print(f"평가점 (Evaluation Score): {eval_score}")
+                        car_details["평가점"] = eval_score
+                    except Exception as e:
+                        print(f"평가점 not found for car {i + 1}: {e}")
+                        car_details["평가점"] = None
 
-                            # Locate either the car image or car title link
                     car_image = car.find_element(By.XPATH, ".//div[@class='car-image']/a")
                     car_title = car.find_element(By.XPATH, ".//div[@class='car-title']/a")
 
@@ -152,7 +204,7 @@ try:
                     for url in image_urls:
                         print(url)
                     # Parse and print car details
-                    car_details = {}
+                    
                     for li in car_details_div.find_all("li"):
                         label_kr = li.find("span").text.strip() if li.find("span") else "Unknown"
                         value_kr = li.find("strong").text.strip() if li.find("strong") else "Unknown"
