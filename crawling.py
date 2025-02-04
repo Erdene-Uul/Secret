@@ -1,6 +1,7 @@
 import logging
 import psycopg2
 from psycopg2.extras import execute_values
+import requests
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
@@ -8,11 +9,65 @@ from bs4 import BeautifulSoup
 import json
 import time
 from googletrans import Translator
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+import hashlib
+
+server_image_dir = "/var/www/images"
+server_ip = "18.167.136.248"
+username = "ec2-user"
+ssh_key_path = r"C:\Users\Home pc\Downloads\soadmin.pem"
+
+# def create_sftp_connection(server_ip, username, ssh_key_path):
+#     """
+#     Establish a single SFTP connection and return the SFTP client object.
+#     """
+#     ssh = paramiko.SSHClient()
+#     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+#     ssh.connect(hostname=server_ip, username=username, key_filename=ssh_key_path)
+#     sftp = ssh.open_sftp()
+#     return ssh, sftp
+
+# ssh, sftp = create_sftp_connection(server_ip, username, ssh_key_path)
+
+def generate_short_file_name(image_url, prefix="img"):
+    """
+    Generate a short, readable file name based on the image URL.
+    """
+    # Extract file extension from the URL
+    parsed_url = urlparse(image_url)
+    extension = parsed_url.path.split(".")[-1]
+    if len(extension) > 4:  # Handle cases where there's no valid extension
+        extension = "jpg"
+    # Generate a hash of the URL (to ensure uniqueness)
+    hash_value = hashlib.md5(image_url.encode('utf-8')).hexdigest()[:8]
+    return f"{prefix}_{hash_value}.{extension}"
+def upload_image_to_server(image_url, server_image_dir, sftp):
+    if image_url is None:
+        print("Image URL is None")
+        return
+    try:
+        # Step 1: Download the image into memory
+        response = requests.get(image_url, stream=True)
+        if response.status_code != 200:
+            print(f"Failed to download image: {image_url}. Status Code: {response.status_code}")
+            return
+        # Step 2: Generate a short file name
+        short_file_name = generate_short_file_name(image_url)
+        remote_image_path = f"{server_image_dir}/{short_file_name}"
+
+        # Step 3: Upload the file to the server
+        with sftp.file(remote_image_path, "wb") as remote_file:
+            for chunk in response.iter_content(1024):
+                remote_file.write(chunk)
+
+        print(f"Image uploaded successfully: {remote_image_path}")
+        return short_file_name
+    except Exception as e:
+        print(f"Error uploading image {image_url}: {e}")
 
 def json_serial(obj):
     """JSON serializer for objects not serializable by default json code."""
@@ -43,9 +98,32 @@ with open('url.txt', 'r') as file:
 
 # Initialize logging
 logging.basicConfig(level=logging.INFO)
+
+BRAND_NAME_MAP = {
+    "현대": "Hyundai",
+    "벤츠": "Mercedes",
+}
+
+FUEL_TYPE_MAP = {
+    "휘발유": "Бензин",
+    "경유": "Дизель",
+    "LPG": "Газ",
+    "겸용": "Хосолсон",
+    "하이브리드": "Хайбрид",
+    "CNG": "CNG",
+    "전기": "Цахилгаан",
+    "수소": "Ус төрөгчийн түлш",
+}
 def translate_text(text, src='ko', dest='en'):
+    
     if isinstance(text, datetime) or text == None:
         return text  # Convert datetime to string format 'YYYY-MM-DD'
+    
+    if text in FUEL_TYPE_MAP:
+        return FUEL_TYPE_MAP[text]
+    
+    if text in BRAND_NAME_MAP:
+        return BRAND_NAME_MAP[text]
     try:
         # Initialize the translator
         translator = Translator()
@@ -85,7 +163,7 @@ else:
     raise ValueError("The 'atn' parameter is missing from the URL.")
 for option in range(len(auction_options)):
     # Select the option by clicking on it
-    current_atn = start_atn + option  # Increment `atn` by one on each iteration
+    current_atn = start_atn + option  # Increment atn by one on each iteration
     print(current_atn, "current_atn")
     query_params['atn'] = [str(current_atn)]  # Update 'atn' parameter in query
     
@@ -138,6 +216,7 @@ for option in range(len(auction_options)):
                         car_exists = cur.fetchone()
                         print(car_exists, '----car_exists')
                         if car_exists:
+                            driver.back()
                             continue
                         print(f"Extracted Chassis Number (차대번호): {chassis_number}")
                         
@@ -162,7 +241,9 @@ for option in range(len(auction_options)):
                             style = img_tag.get('style')
                             if img_url and img_url not in seen_urls and (not style or 'display: none' not in style):
                                 seen_urls.add(img_url)
+                                # image_name = upload_image_to_server(img_url, server_image_dir, sftp)
                                 unique_img_tags.append(img_url)
+               
                     data = {}
                     car_name = None
                     manufacturer = None
@@ -177,6 +258,7 @@ for option in range(len(auction_options)):
                     date_text = date_element.text.strip()
                     cleaned_date_text = re.sub(r'\s*\(.*?\)\s*', ' ', date_text)  # Remove text within parentheses
                     date_obj = datetime.strptime(cleaned_date_text, "%y/%m/%d %H:%M")
+                    date_obj_plus_4_hours = date_obj + timedelta(hours=4)
                     print("Parsed Date and Time:", date_obj)
                     
                     # Extract the car price
@@ -187,8 +269,9 @@ for option in range(len(auction_options)):
                         print(f"Car Price: {car_price} 만원")
 
                     # Now add car name and price to the data dictionary
+                    data['Car Name Korean'] = car_name_tag.text.strip()
                     data['Car Name'] = cleaned_car_name
-                    data['Auction Date'] = date_obj
+                    data['Auction Date'] = date_obj_plus_4_hours
                     data['Manufacturer'] = manufacturer
                     data['Car Price'] = car_price
                     index = 0
@@ -268,11 +351,12 @@ for option in range(len(auction_options)):
 
                     
                     status_box = detail_soup.find('div', class_='status-box')
-                    main_image_url = None
+                    # main_img_name = None
             
                     if status_box:
                         img_tag = status_box.find('div', class_='img-box').find('img')
-                        main_image_url = img_tag['src'] if img_tag else None
+                        main_img_url = img_tag['src'] if img_tag else None
+                        # main_img_name = upload_image_to_server(main_img_url, server_image_dir, sftp)
                     # Insert data into Cars table
                     print(data.get('Last Regular Inspection'), '----date')
                     print(data.get('First Registration Date'), '----date2')
@@ -280,9 +364,9 @@ for option in range(len(auction_options)):
                         cur.execute("""
                         INSERT INTO cars (
                             vin_number, name, status, fuel_type, engine_displacement, seating_capacity, 
-                            engine_model, starting_price, license_plate_number, model_year, mileage, color, seat_number, manufacturer, image_url, created_by, created_date, updated_by, updated_date, auction_date
+                            engine_model, starting_price, license_plate_number, model_year, mileage, color, seat_number, manufacturer, image_url, created_by, created_date, updated_by, updated_date, auction_date, name_korean
                         ) VALUES (
-                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                         ) RETURNING id;
                         """, (
                         chassis_number,
@@ -299,16 +383,17 @@ for option in range(len(auction_options)):
                         data.get('Color'),
                         data.get('Seat Number'),
                         data.get('Manufacturer'),
-                        main_image_url,
+                        main_img_url,
                         1,
                         datetime.now(),
                         1,
                         datetime.now(),
-                        data.get('Auction Date')
+                        data.get('Auction Date'),
+                        data.get('Car Name Korean')
                     ))
                         
                         # Insert data into CarImages table
-                        data['Main Image'] = main_image_url
+                        data['Main Image'] = main_img_url
                         car_id = cur.fetchone()[0]
                         print(f"Car inserted with ID: {car_id}")
                         cur.execute("SELECT * FROM cars WHERE id = %s", (car_id,))
@@ -320,7 +405,7 @@ for option in range(len(auction_options)):
                             print(f"Car not found in table with ID: {car_id}")
                     
                         # Insert data into CarImages table using the auto-incremented car_id
-                        car_images_values = [(car_id, img_url, 1, 1, datetime.now(), 1, datetime.now()) for img_url in unique_img_tags]
+                        car_images_values = [(car_id, img_name, 1, 1, datetime.now(), 1, datetime.now()) for img_name in unique_img_tags]
                         car_detail_data.append({'car':data, 'images':car_images_values})
 
                         # Use execute_values to insert all images related to this car
@@ -332,33 +417,17 @@ for option in range(len(auction_options)):
                     except Exception as inst:
                         print(inst, '---eroor')
                         connection.rollback()
-
-                    # Go back to the main list page
                     driver.back()
                     time.sleep(3)
         print(f"Page {page} extracted successfully.")
-
+   
         # Navigate to the next page
-        # Print the current page URL
-        driver.get(new_url)
-        time.sleep(8)
+        time.sleep(2)
         print("Current page URL:", driver.current_url)
        
         if page < total_pages:
             next_page_button = driver.find_element("xpath", f'//button[@onclick="fnPaging({page + 1})"]')
             next_page_button.click()
-            # next_page_button = None
-            # while True:
-            #     try:
-            #         next_page_button = driver.find_element("xpath", f'//button[@onclick="fnPaging({page + 1})"]')
-            #         print("next_page_button is found")
-            #         break
-            #     except Exception as e:
-            #         print("Next page button not found. Error:", e)
-            #         next_page_button = driver.find_element("class name", "paging-next")
-            #         next_page_button.click()
-            # if next_page_button: 
-            #     next_page_button.click()
             time.sleep(5)
 
               
@@ -367,7 +436,8 @@ driver.quit()
 connection.commit()
 cur.close()
 connection.close()
-
+# sftp.close()
+# ssh.close()
 # Save the extracted data to a JSON file
 with open('car_detail_data.json', 'w', encoding='utf-8') as detail_json_file:
     json.dump(car_detail_data, detail_json_file, ensure_ascii=False, indent=4, default=json_serial)
