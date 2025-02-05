@@ -193,6 +193,46 @@ try:
 
                     # Extract car details
                     detail_soup = BeautifulSoup(driver.page_source, 'html.parser')
+                    # Extract Car Title Without Auction Number
+                    try:
+                        title_element = detail_soup.find("h2", class_="tit_style2")
+                        if title_element:
+                            car_title_raw = title_element.text.strip()
+                            car_title_clean = re.sub(r"^\[\d+\]\s*", "", car_title_raw)  # Remove "[1001] "
+                            car_details["car_name_kor"] = car_title_clean
+                            print(f"Full Car Title: {car_title_clean}")
+
+                            # Extract Manufacturer (First Word)
+                            title_parts = car_title_clean.split()
+                            manufacturer = title_parts[0] if title_parts else None
+                            car_title_without_manufacturer = " ".join(title_parts[1:])  # Remove first word
+
+                            print(f"Manufacturer: {manufacturer}")
+                            print(f"Car Title Without Manufacturer: {car_title_without_manufacturer}")
+
+                            # Save car_details
+                            car_details["manufacturer"] = translate_text(manufacturer, src='ko', dest='en')
+                            car_details["title"] = translate_text(car_title_without_manufacturer, src='ko', dest='en')
+                        else:
+                            print("Car title not found.")
+                            car_details["title"] = None
+                            car_details["manufacturer"] = None
+                    except Exception as e:
+                        print(f"Error extracting car title and manufacturer: {e}")
+
+                    # Extract Start Price Without "만원"
+                    try:
+                        price_element = detail_soup.find("strong", class_="i_comm_main_txt2")
+                        if price_element:
+                            start_price = price_element.text.strip().replace(",", "")  # Remove commas
+                            print(f"Start Price: {start_price} (in 10,000 KRW units)")
+                            car_details["start_price"] = int(start_price)  # Convert to integer
+                        else:
+                            print("Start price not found.")
+                            car_details["start_price"] = None
+                    except Exception as e:
+                        print(f"Error extracting start price: {e}")
+
                     car_details_div = detail_soup.find('div', class_="details-block")
                     if not car_details_div:
                         raise Exception("Details block not found on the page.")
@@ -205,26 +245,101 @@ try:
                         print(url)
                     # Parse and print car details
                     
-                    for li in car_details_div.find_all("li"):
-                        label_kr = li.find("span").text.strip() if li.find("span") else "Unknown"
-                        value_kr = li.find("strong").text.strip() if li.find("strong") else "Unknown"
-                        print(label_kr)
-                        print(value_kr)
-                        if isinstance(label_kr, str):
-                         label = translate_text(label_kr, src='ko', dest='en')
-                        else:
-                            label = label_kr
+                    # Extract specific details from the car detail page
+                    try:
+                        for li in car_details_div.find_all("li"):
+                            label_kr = li.find("span").text.strip() if li.find("span") else "Unknown"
+                            value_kr = li.find("strong").text.strip() if li.find("strong") else "Unknown"
 
-                        if isinstance(value_kr, str):
-                            value = translate_text(value_kr, src='ko', dest='en')
-                        else:
-                            value = value_kr
-                        car_details[label] = value
+                            if label_kr == "차대번호":  # VIN Number
+                                car_details["vin_number"] = value_kr
+                                print(f"차대번호 (VIN): {value_kr}")
+
+                            elif label_kr == "연식":  # Year (Only the year, remove extra text)
+                                year_match = re.search(r"\d{4}", value_kr)
+                                if year_match:
+                                    car_details["year"] = year_match.group(0)
+                                    print(f"연식 (Year): {car_details['year']}")
+
+                            elif label_kr == "연료":  # Fuel Type
+                                car_details["fuel_type"] = translate_text(value_kr, src='ko', dest='en')
+                                print(f"연료 (Fuel): {value_kr}")
+
+                            elif label_kr == "주행거리":  # Mileage (Remove `Km`)
+                                mileage_clean = re.sub(r"[^\d]", "", value_kr)  # Remove non-numeric characters
+                                car_details["mileage"] = mileage_clean
+                                print(f"주행거리 (Mileage): {mileage_clean} Km")
+
+                            elif label_kr == "배기량":  # Engine Capacity
+                                car_details["engine_capacity"] = value_kr
+                                print(f"배기량 (Engine Capacity): {value_kr}")
+
+                            elif label_kr == "색상":  # Color (Only the color name)
+                                color_match = re.search(r"[\w가-힣]+", value_kr)
+                                car_details["color"] = translate_text(color_match.group(0) if color_match else None, src='ko', dest='en') 
+                                print(f"색상 (Color): {car_details['color']}")
+
+                    except Exception as e:
+                        print(f"Error extracting car details: {e}")
+
 
                     print("Car Details:")
                     for key, value in car_details.items():
                         print(f"{key}: {value}")
+                    try:
+                        cur.execute("""
+                        INSERT INTO cars (
+                            vin_number, name, status, fuel_type, engine_displacement,
+                            engine_model, starting_price, model_year, mileage, color, manufacturer, image_url, created_by, created_date, updated_by, updated_date, auction_date, name_korean
+                        ) VALUES (
+                            %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                        ) RETURNING id;
+                        """, (
+                        car_details['vin_number'],
+                        car_details['title'],
+                        1,
+                        car_details.get('fuel_type'),
+                        car_details.get('engine_capacity'),
+                        car_details.get('engine'),
+                        car_details.get('start_price'),
+                        car_details.get('year'),
+                        car_details.get('milage'),
+                        car_details.get('color'),
+                        car_details.get('manufacturer'),
+                        main_img_url,
+                        1,
+                        datetime.now(),
+                        1,
+                        datetime.now(),
+                        car_details.get('Auction Date'),
+                        car_details.get('Car Name Korean')
+                    ))
+                        
+                        # Insert car_details into CarImages table
+                        car_details['Main Image'] = main_img_url
+                        car_id = cur.fetchone()[0]
+                        print(f"Car inserted with ID: {car_id}")
+                        cur.execute("SELECT * FROM cars WHERE id = %s", (car_id,))
+                        car = cur.fetchone()
+                        connection.commit()
+                        if car:
+                            print(f"Car exists in table with ID: {car_id}")
+                        else:
+                            print(f"Car not found in table with ID: {car_id}")
+                    
+                        # Insert car_details into CarImages table using the auto-incremented car_id
+                        car_images_values = [(car_id, img_name, 1, 1, datetime.now(), 1, datetime.now()) for img_name in unique_img_tags]
+                        car_detail_data.append({'car':car_details, 'images':car_images_values})
 
+                        # Use execute_values to insert all images related to this car
+                        execute_values(cur, """
+                            INSERT INTO car_images (car_id, name, status, created_by, created_date, updated_by, updated_date) 
+                            VALUES %s;
+                        """, car_images_values)
+                        connection.commit()
+                    except Exception as inst:
+                        print(inst, '---eroor')
+                        connection.rollback()
                     # Navigate back to the car list
                     driver.back()
                     time.sleep(2)
